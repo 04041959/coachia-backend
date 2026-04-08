@@ -119,10 +119,6 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
-
 app.get("/chatAlex", async (req, res) => {
   try {
     const userMessage = req.query.message || "Bonjour";
@@ -151,6 +147,11 @@ Réponds de manière humaine, simple et impactante.`
     console.error(error);
     res.status(500).json({ error: "Erreur GPT" });
   }
+});
+
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
 });
 
 
