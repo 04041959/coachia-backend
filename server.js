@@ -122,3 +122,35 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
+
+app.get("/chatAlex", async (req, res) => {
+  try {
+    const userMessage = req.query.message || "Bonjour";
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `Tu es Alex, un coach bienveillant, clair, profond et rassurant.
+Tu aides l'utilisateur à comprendre sa situation et à avancer concrètement.
+Réponds de manière humaine, simple et impactante.`
+        },
+        {
+          role: "user",
+          content: userMessage
+        }
+      ],
+    });
+
+    const reply = response.choices[0].message.content;
+
+    res.json({ reply });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Erreur GPT" });
+  }
+});
+
+
