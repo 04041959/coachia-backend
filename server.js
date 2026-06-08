@@ -37,6 +37,9 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
       });
     }
 
+    console.log("🔊 GET /generateAlexVoiceMp3 appelé");
+    console.log("Texte reçu :", String(text).slice(0, 120));
+
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: "alloy",
@@ -46,13 +49,15 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
 
     const buffer = Buffer.from(await speech.arrayBuffer());
 
+    console.log("✅ MP3 Alex généré. Taille :", buffer.length, "octets");
+
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("Cache-Control", "no-store");
 
     return res.status(200).send(buffer);
   } catch (error) {
-    console.error("Erreur GET /generateAlexVoiceMp3 :", error);
+    console.error("❌ Erreur GET /generateAlexVoiceMp3 :", error);
     return res.status(500).json({
       success: false,
       error: error?.message || "Erreur serveur",
@@ -63,32 +68,58 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
 // Route transcription audio utilisateur
 app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
   try {
+    console.log("🎙️ Route POST /transcribeUserAudio appelée");
+    console.log("Headers content-type :", req.headers["content-type"]);
+    console.log("Body reçu :", req.body);
+    console.log("Fichier reçu :", req.file);
+
     if (!req.file) {
+      console.log("❌ Aucun fichier audio reçu dans le champ 'audio'.");
+
       return res.status(400).json({
         success: false,
         error: "Aucun fichier audio reçu. Envoyez un champ multipart nommé 'audio'.",
+        debug: {
+          hasFile: false,
+          bodyKeys: Object.keys(req.body || {}),
+          contentType: req.headers["content-type"] || null,
+        },
       });
     }
 
-    const file = new File(
-      [req.file.buffer],
-      req.file.originalname || "user-audio.mp3",
-      {
-        type: req.file.mimetype || "audio/mpeg",
-      }
-    );
+    console.log("✅ Fichier audio reçu");
+    console.log("Nom original :", req.file.originalname);
+    console.log("MIME type :", req.file.mimetype);
+    console.log("Taille :", req.file.size, "octets");
+
+    const safeFileName = req.file.originalname || "user-audio.mp3";
+    const safeMimeType = req.file.mimetype || "audio/mpeg";
+
+    const file = new File([req.file.buffer], safeFileName, {
+      type: safeMimeType,
+    });
+
+    console.log("📝 Envoi à OpenAI transcription...");
 
     const transcription = await openai.audio.transcriptions.create({
       file,
       model: "gpt-4o-mini-transcribe",
     });
 
-    return res.json({
+    console.log("✅ Transcription réussie :", transcription.text);
+
+    return res.status(200).json({
       success: true,
       text: transcription.text || "",
+      debug: {
+        fileName: safeFileName,
+        mimeType: safeMimeType,
+        size: req.file.size,
+      },
     });
   } catch (error) {
-    console.error("Erreur POST /transcribeUserAudio :", error);
+    console.error("❌ Erreur POST /transcribeUserAudio :", error);
+
     return res.status(500).json({
       success: false,
       error: error?.message || "Erreur transcription audio",
@@ -100,6 +131,9 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
 app.get("/chatAlex", async (req, res) => {
   try {
     const userMessage = req.query.message || "Bonjour";
+
+    console.log("💬 GET /chatAlex appelé");
+    console.log("Message utilisateur :", String(userMessage).slice(0, 200));
 
     const response = await openai.responses.create({
       model: "gpt-4.1-mini",
@@ -169,10 +203,12 @@ Sois naturel, humain, empathique, subtil et encourageant.`
 
     const reply = response.output_text || "Je suis là pour vous aider.";
 
+    console.log("✅ Réponse Alex :", reply.slice(0, 200));
+
     return res.json({ reply });
 
   } catch (error) {
-    console.error("Erreur GET /chatAlex :", error);
+    console.error("❌ Erreur GET /chatAlex :", error);
     return res.status(500).json({
       success: false,
       error: error?.message || "Erreur GPT"
