@@ -1,3 +1,95 @@
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import OpenAI, { toFile } from "openai";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const port = process.env.PORT || 10000;
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+app.use(cors());
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024,
+  },
+});
+
+// Route test
+app.get("/", (req, res) => {
+  res.json({
+    success: true,
+    message: "Coachia backend fonctionne.",
+  });
+});
+
+// Route Alex texte
+app.get("/chatAlex", async (req, res) => {
+  try {
+    const message = req.query.message || "Bonjour Alex";
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "Tu es Alex, un coach bienveillant, clair, humain et motivant.",
+        },
+        {
+          role: "user",
+          content: String(message),
+        },
+      ],
+    });
+
+    res.json({
+      success: true,
+      reply: completion.choices[0]?.message?.content || "",
+    });
+  } catch (error) {
+    console.error("Erreur /chatAlex :", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Route voix Alex MP3
+app.get("/generateAlexVoiceMp3", async (req, res) => {
+  try {
+    const text = req.query.text || "Bonjour, je suis Alex.";
+
+    const mp3 = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      input: String(text),
+    });
+
+    const buffer = Buffer.from(await mp3.arrayBuffer());
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Disposition", "inline; filename=alex.mp3");
+    res.send(buffer);
+  } catch (error) {
+    console.error("Erreur /generateAlexVoiceMp3 :", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // Route transcription audio utilisateur
 app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
   try {
@@ -10,25 +102,20 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
     let fileName = "user-audio.mp3";
     let mimeType = "audio/mpeg";
 
-    // CAS 1 : FlutterFlow envoie un vrai fichier multipart
     if (req.file) {
       console.log("✅ Fichier multipart reçu");
 
       audioBuffer = req.file.buffer;
       fileName = req.file.originalname || "user-audio.mp3";
       mimeType = req.file.mimetype || "audio/mpeg";
-    }
-
-    // CAS 2 : FlutterFlow envoie un champ audio dans req.body.audio
-    else if (req.body && req.body.audio) {
+    } else if (req.body && req.body.audio) {
       console.log("⚠️ Aucun req.file, mais req.body.audio existe");
-      console.log("Valeur req.body.audio :", req.body.audio);
 
       const audioValue = String(req.body.audio);
+      console.log("Valeur req.body.audio :", audioValue);
 
-      // Si c'est une URL
       if (audioValue.startsWith("http://") || audioValue.startsWith("https://")) {
-        console.log("🌐 Audio détecté comme URL. Téléchargement...");
+        console.log("🌐 Audio détecté comme URL");
 
         const audioResponse = await fetch(audioValue);
 
@@ -50,10 +137,7 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
         console.log("✅ Audio téléchargé depuis URL");
         console.log("MIME type :", mimeType);
         console.log("Taille :", audioBuffer.length);
-      }
-
-      // Si ce n'est pas une URL exploitable
-      else {
+      } else {
         return res.status(400).json({
           success: false,
           error: "Le champ audio existe mais ce n'est pas une URL exploitable.",
@@ -65,12 +149,7 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
           },
         });
       }
-    }
-
-    // CAS 3 : rien reçu
-    else {
-      console.log("❌ Aucun fichier audio reçu");
-
+    } else {
       return res.status(400).json({
         success: false,
         error: "Aucun fichier audio reçu.",
@@ -82,7 +161,14 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
       });
     }
 
-    const file = new File([audioBuffer], fileName, {
+    if (!audioBuffer || audioBuffer.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Le fichier audio est vide.",
+      });
+    }
+
+    const file = await toFile(audioBuffer, fileName, {
       type: mimeType,
     });
 
@@ -115,4 +201,8 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
       error: error?.message || "Erreur transcription audio",
     });
   }
+});
+
+app.listen(port, () => {
+  console.log(`🚀 Server running on port ${port}`);
 });
