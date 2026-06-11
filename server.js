@@ -38,6 +38,10 @@ app.get("/", (req, res) => {
 // Route Alex texte avec mémoire conversationnelle
 app.get("/chatAlex", async (req, res) => {
   try {
+    console.log("🤖 Route /chatAlex appelée");
+    console.log("Message reçu :", req.query.message);
+    console.log("Conversation ID :", req.query.conversationId || "default");
+
     const message = req.query.message || "Bonjour Alex";
     const conversationId = req.query.conversationId || "default";
 
@@ -56,7 +60,6 @@ app.get("/chatAlex", async (req, res) => {
       content: String(message),
     });
 
-    // Limite mémoire pour éviter une conversation trop longue
     const systemMessage = conversations[conversationId][0];
     const recentMessages = conversations[conversationId].slice(-20);
 
@@ -64,6 +67,8 @@ app.get("/chatAlex", async (req, res) => {
       systemMessage,
       ...recentMessages.filter((m) => m.role !== "system"),
     ];
+
+    console.log("🧠 Nombre de messages mémoire :", conversations[conversationId].length);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -76,6 +81,8 @@ app.get("/chatAlex", async (req, res) => {
       role: "assistant",
       content: reply,
     });
+
+    console.log("✅ Réponse Alex :", reply);
 
     res.json({
       success: true,
@@ -99,6 +106,8 @@ app.get("/resetChatAlex", (req, res) => {
 
   delete conversations[conversationId];
 
+  console.log("🧹 Mémoire Alex réinitialisée :", conversationId);
+
   res.json({
     success: true,
     message: "Mémoire Alex réinitialisée.",
@@ -109,6 +118,9 @@ app.get("/resetChatAlex", (req, res) => {
 // Route voix Alex MP3
 app.get("/generateAlexVoiceMp3", async (req, res) => {
   try {
+    console.log("🔊 Route /generateAlexVoiceMp3 appelée");
+    console.log("Texte voix reçu :", req.query.text);
+
     const text = req.query.text || "Bonjour, je suis Alex.";
 
     const mp3 = await openai.audio.speech.create({
@@ -118,6 +130,8 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
+
+    console.log("✅ MP3 Alex généré. Taille :", buffer.length);
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Disposition", "inline; filename=alex.mp3");
