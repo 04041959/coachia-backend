@@ -13,6 +13,9 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Mémoire temporaire des conversations
+const conversations = {};
+
 app.use(cors());
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
@@ -32,37 +35,75 @@ app.get("/", (req, res) => {
   });
 });
 
-// Route Alex texte
+// Route Alex texte avec mémoire conversationnelle
 app.get("/chatAlex", async (req, res) => {
   try {
     const message = req.query.message || "Bonjour Alex";
+    const conversationId = req.query.conversationId || "default";
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
+    if (!conversations[conversationId]) {
+      conversations[conversationId] = [
         {
           role: "system",
           content:
-            "Tu es Alex, un coach bienveillant, clair, humain et motivant.",
+            "Tu es Alex, un coach bienveillant, clair, humain et motivant. Tu réponds de façon naturelle, encourageante et concise. Tu tiens compte de l'historique de la conversation quand il est disponible.",
         },
-        {
-          role: "user",
-          content: String(message),
-        },
-      ],
+      ];
+    }
+
+    conversations[conversationId].push({
+      role: "user",
+      content: String(message),
+    });
+
+    // Limite mémoire pour éviter une conversation trop longue
+    const systemMessage = conversations[conversationId][0];
+    const recentMessages = conversations[conversationId].slice(-20);
+
+    const messagesForOpenAI = [
+      systemMessage,
+      ...recentMessages.filter((m) => m.role !== "system"),
+    ];
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: messagesForOpenAI,
+    });
+
+    const reply = completion.choices[0]?.message?.content || "";
+
+    conversations[conversationId].push({
+      role: "assistant",
+      content: reply,
     });
 
     res.json({
       success: true,
-      reply: completion.choices[0]?.message?.content || "",
+      reply,
+      conversationId,
+      memoryLength: conversations[conversationId].length,
     });
   } catch (error) {
     console.error("Erreur /chatAlex :", error);
+
     res.status(500).json({
       success: false,
       error: error.message,
     });
   }
+});
+
+// Route reset mémoire Alex
+app.get("/resetChatAlex", (req, res) => {
+  const conversationId = req.query.conversationId || "default";
+
+  delete conversations[conversationId];
+
+  res.json({
+    success: true,
+    message: "Mémoire Alex réinitialisée.",
+    conversationId,
+  });
 });
 
 // Route voix Alex MP3
