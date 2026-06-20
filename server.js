@@ -106,7 +106,7 @@ app.get("/chatAlex", async (req, res) => {
       max_tokens: 220,
     });
 
-    let reply = completion.choices[0].message.content.trim();
+    const reply = completion.choices[0].message.content.trim();
 
     conversations[conversationId].push({
       role: "assistant",
@@ -159,6 +159,8 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
 
 // Transcription audio utilisateur
 app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
+  let tempFilePath = null;
+
   try {
     console.log("🎙️ Route transcribeUserAudio appelée");
     console.log("📁 Fichier reçu :", req.file);
@@ -169,12 +171,32 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
       });
     }
 
+    const originalName = req.file.originalname || "";
+
+    const extension = originalName.toLowerCase().endsWith(".wav")
+      ? ".wav"
+      : originalName.toLowerCase().endsWith(".mp3")
+      ? ".mp3"
+      : originalName.toLowerCase().endsWith(".webm")
+      ? ".webm"
+      : originalName.toLowerCase().endsWith(".ogg")
+      ? ".ogg"
+      : originalName.toLowerCase().endsWith(".mp4")
+      ? ".mp4"
+      : ".m4a";
+
+    tempFilePath = req.file.path + extension;
+
+    fs.renameSync(req.file.path, tempFilePath);
+
+    console.log("🎧 Fichier renommé pour Whisper :", tempFilePath);
+
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(req.file.path),
+      file: fs.createReadStream(tempFilePath),
       model: "whisper-1",
     });
 
-    fs.unlinkSync(req.file.path);
+    fs.unlinkSync(tempFilePath);
 
     console.log("✅ Transcription réussie :", transcription.text);
 
@@ -184,7 +206,13 @@ app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
   } catch (error) {
     console.error("❌ Erreur transcription :", error);
 
-    if (req.file && req.file.path) {
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        fs.unlinkSync(tempFilePath);
+      } catch (e) {}
+    }
+
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       try {
         fs.unlinkSync(req.file.path);
       } catch (e) {}
