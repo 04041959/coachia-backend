@@ -1,265 +1,203 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import OpenAI, { toFile } from "openai";
-import dotenv from "dotenv";
-
-dotenv.config();
+import fs from "fs";
+import OpenAI from "openai";
 
 const app = express();
-const port = process.env.PORT || 10000;
+const upload = multer({ dest: "uploads/" });
+
+app.use(cors());
+app.use(express.json());
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Mémoire temporaire des conversations
 const conversations = {};
 
-app.use(cors());
-app.use(express.json({ limit: "25mb" }));
-app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+const ALEX_SYSTEM_PROMPT = `
+Tu es Alex, un coach conversationnel doué, chaleureux, calme et bienveillant.
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 25 * 1024 * 1024,
-  },
-});
+Tu aides l'utilisateur dans les domaines suivants :
+- émotions ;
+- relations ;
+- solitude ;
+- confiance en soi ;
+- communication ;
+- blessures affectives ;
+- amour ;
+- famille ;
+- conflits ;
+- motivation personnelle.
+
+Tu n'es pas un professeur.
+Tu n'es pas un thérapeute.
+Tu ne fais pas de longs cours.
+Tu ne poses pas de diagnostic médical ou psychologique.
+
+Ta priorité est d'écouter, reformuler, rassurer et aider l'utilisateur à avancer pas à pas.
+
+RÈGLES DE LONGUEUR :
+- question simple : 50 mots maximum ;
+- question moyenne : 80 mots maximum ;
+- question complexe : 120 mots maximum ;
+- émotion forte : 150 mots maximum.
+
+Quand la question est complexe :
+1. Reformule brièvement.
+2. Identifie les sujets importants.
+3. Ne traite qu'un seul sujet à la fois.
+4. Termine par une question simple.
+
+Évite les longues listes.
+Maximum 3 points si une liste est nécessaire.
+
+Tu dois parler comme un humain bienveillant, pas comme un manuel.
+Ton style doit donner envie à l'utilisateur de continuer à parler.
+
+Si le sujet touche à la santé mentale, reste prudent :
+- encourage l'écoute ;
+- évite les diagnostics ;
+- conseille de consulter un professionnel si nécessaire ;
+- reste humain et rassurant.
+
+Réponds toujours dans la langue de l'utilisateur.
+`;
 
 // Route test
 app.get("/", (req, res) => {
-  res.json({
-    success: true,
-    message: "Coachia backend fonctionne.",
-  });
+  res.send("Coachia backend is running ✅");
 });
 
-// Route Alex texte avec mémoire conversationnelle
+// Chat Alex
 app.get("/chatAlex", async (req, res) => {
   try {
-    console.log("🤖 Route /chatAlex appelée");
-    console.log("Message reçu :", req.query.message);
-    console.log("Conversation ID :", req.query.conversationId || "default");
-
-    const message = req.query.message || "Bonjour Alex";
+    const message = req.query.message || "";
     const conversationId = req.query.conversationId || "default";
+
+    console.log("💬 Message reçu :", message);
+    console.log("🧠 Conversation ID :", conversationId);
+
+    if (!message.trim()) {
+      return res.json({
+        reply: "Je suis là. Dis-moi simplement ce que tu ressens ou ce que tu veux partager.",
+      });
+    }
 
     if (!conversations[conversationId]) {
       conversations[conversationId] = [
         {
           role: "system",
-                   
-       content:
-  "Tu es Alex, un coach relationnel bienveillant, clair, humain et motivant. Tu aides principalement sur les relations humaines, les émotions, la communication, la solitude, la confiance, les blessures affectives, les conflits, l'amour, l'amitié et la famille. Tu réponds de façon naturelle, encourageante et concise. Tu tiens compte de l'historique de la conversation quand il est disponible. Règle absolue : tu dois toujours répondre à l'utilisateur. Ne reste jamais silencieux. Si la demande ne relève pas de ton domaine de coach relationnel, réponds gentiment que ce sujet correspond plutôt à un autre coach de Coachia. Oriente l'utilisateur vers le coach le plus adapté : Lola pour la méditation, le sommeil, la relaxation et les ruminations ; Espérance pour la spiritualité, la quête de sens, la foi, la prière, l'espérance, le pardon, la gratitude et le cheminement intérieur ; Motivation pour l'énergie, les objectifs et le passage à l'action ; Langues pour l'apprentissage des langues ; un coach pédagogique pour les devoirs, les mathématiques, les sciences ou les explications scolaires. Ne donne pas une réponse vide. Si tu ne sais pas, dis-le simplement et propose une orientation utile. Règle de langue prioritaire : réponds toujours dans la langue du dernier message de l'utilisateur. Si l'utilisateur parle français, réponds en français. Si l'utilisateur parle portugais, réponds en portugais. Si l'utilisateur parle anglais, réponds en anglais. Si l'utilisateur change de langue, adapte-toi immédiatement à cette nouvelle langue. Ne mélange pas les langues sauf si l'utilisateur le demande explicitement.",
-        
+          content: ALEX_SYSTEM_PROMPT,
         },
       ];
     }
 
     conversations[conversationId].push({
       role: "user",
-      content: String(message),
+      content: message,
     });
-
-    const systemMessage = conversations[conversationId][0];
-    const recentMessages = conversations[conversationId].slice(-20);
-
-    const messagesForOpenAI = [
-      systemMessage,
-      ...recentMessages.filter((m) => m.role !== "system"),
-    ];
-
-    console.log("🧠 Nombre de messages mémoire :", conversations[conversationId].length);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: messagesForOpenAI,
+      messages: conversations[conversationId],
+      temperature: 0.7,
+      max_tokens: 220,
     });
 
-    const reply = completion.choices[0]?.message?.content || "";
+    let reply = completion.choices[0].message.content.trim();
 
     conversations[conversationId].push({
       role: "assistant",
       content: reply,
     });
 
-    console.log("✅ Réponse Alex :", reply);
+    console.log("✅ Réponse Alex générée :", reply);
 
-    res.json({
-      success: true,
-      reply,
-      conversationId,
-      memoryLength: conversations[conversationId].length,
-    });
+    res.json({ reply });
   } catch (error) {
-    console.error("Erreur /chatAlex :", error);
-
+    console.error("❌ Erreur chatAlex :", error);
     res.status(500).json({
-      success: false,
-      error: error.message,
+      reply: "Je suis désolé, j'ai eu un petit blocage. Peux-tu reformuler simplement ta question ?",
     });
   }
 });
 
-// Route reset mémoire Alex
-app.get("/resetChatAlex", (req, res) => {
-  const conversationId = req.query.conversationId || "default";
-
-  delete conversations[conversationId];
-
-  console.log("🧹 Mémoire Alex réinitialisée :", conversationId);
-
-  res.json({
-    success: true,
-    message: "Mémoire Alex réinitialisée.",
-    conversationId,
-  });
-});
-
-// Route voix Alex MP3
+// Génération voix Alex MP3
 app.get("/generateAlexVoiceMp3", async (req, res) => {
   try {
-    console.log("🔊 Route /generateAlexVoiceMp3 appelée");
-    console.log("Texte voix reçu :", req.query.text);
+    const text = req.query.text || "";
 
-    const text = req.query.text || "Bonjour, je suis Alex.";
+    console.log("🔊 Texte voix reçu :", text);
+
+    if (!text.trim()) {
+      return res.status(400).send("Texte vide");
+    }
 
     const mp3 = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: "alloy",
-      input: String(text),
+      input: text,
     });
 
     const buffer = Buffer.from(await mp3.arrayBuffer());
 
     console.log("✅ MP3 Alex généré. Taille :", buffer.length);
 
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Disposition", "inline; filename=alex.mp3");
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Content-Length": buffer.length,
+    });
+
     res.send(buffer);
   } catch (error) {
-    console.error("Erreur /generateAlexVoiceMp3 :", error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
+    console.error("❌ Erreur génération MP3 :", error);
+    res.status(500).send("Erreur génération voix");
   }
 });
 
-// Route transcription audio utilisateur
+// Transcription audio utilisateur
 app.post("/transcribeUserAudio", upload.single("audio"), async (req, res) => {
   try {
-    console.log("🎙️ Route POST /transcribeUserAudio appelée");
-    console.log("Headers content-type :", req.headers["content-type"]);
-    console.log("Body reçu :", req.body);
-    console.log("Fichier reçu :", req.file);
+    console.log("🎙️ Route transcribeUserAudio appelée");
+    console.log("📁 Fichier reçu :", req.file);
 
-    let audioBuffer = null;
-    let fileName = "user-audio.mp3";
-    let mimeType = "audio/mpeg";
-
-    if (req.file) {
-      console.log("✅ Fichier multipart reçu");
-
-      audioBuffer = req.file.buffer;
-      fileName = req.file.originalname || "user-audio.mp3";
-      mimeType = req.file.mimetype || "audio/mpeg";
-    } else if (req.body && req.body.audio) {
-      console.log("⚠️ Aucun req.file, mais req.body.audio existe");
-
-      const audioValue = String(req.body.audio);
-      console.log("Valeur req.body.audio :", audioValue);
-
-      if (audioValue.startsWith("http://") || audioValue.startsWith("https://")) {
-        console.log("🌐 Audio détecté comme URL");
-
-        const audioResponse = await fetch(audioValue);
-
-        if (!audioResponse.ok) {
-          return res.status(400).json({
-            success: false,
-            error: "Impossible de télécharger l'audio depuis l'URL fournie.",
-            audioValue,
-            status: audioResponse.status,
-          });
-        }
-
-        const arrayBuffer = await audioResponse.arrayBuffer();
-        audioBuffer = Buffer.from(arrayBuffer);
-
-        mimeType = audioResponse.headers.get("content-type") || "audio/mpeg";
-        fileName = "user-audio-from-url.mp3";
-
-        console.log("✅ Audio téléchargé depuis URL");
-        console.log("MIME type :", mimeType);
-        console.log("Taille :", audioBuffer.length);
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: "Le champ audio existe mais ce n'est pas une URL exploitable.",
-          audioValue,
-          debug: {
-            hasFile: false,
-            bodyKeys: Object.keys(req.body || {}),
-            contentType: req.headers["content-type"] || null,
-          },
-        });
-      }
-    } else {
+    if (!req.file) {
       return res.status(400).json({
-        success: false,
-        error: "Aucun fichier audio reçu.",
-        debug: {
-          hasFile: false,
-          bodyKeys: Object.keys(req.body || {}),
-          contentType: req.headers["content-type"] || null,
-        },
+        transcription: "Aucun fichier audio reçu.",
       });
     }
-
-    if (!audioBuffer || audioBuffer.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Le fichier audio est vide.",
-      });
-    }
-
-    const file = await toFile(audioBuffer, fileName, {
-      type: mimeType,
-    });
-
-    console.log("📝 Envoi à OpenAI transcription...");
-    console.log("Nom fichier :", fileName);
-    console.log("Type MIME :", mimeType);
-    console.log("Taille buffer :", audioBuffer.length);
 
     const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: "gpt-4o-mini-transcribe",
+      file: fs.createReadStream(req.file.path),
+      model: "whisper-1",
     });
+
+    fs.unlinkSync(req.file.path);
 
     console.log("✅ Transcription réussie :", transcription.text);
 
-    return res.status(200).json({
-      success: true,
-      text: transcription.text || "",
-      debug: {
-        fileName,
-        mimeType,
-        size: audioBuffer.length,
-      },
+    res.json({
+      transcription: transcription.text,
     });
   } catch (error) {
-    console.error("❌ Erreur POST /transcribeUserAudio :", error);
+    console.error("❌ Erreur transcription :", error);
 
-    return res.status(500).json({
-      success: false,
-      error: error?.message || "Erreur transcription audio",
+    if (req.file && req.file.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {}
+    }
+
+    res.status(500).json({
+      transcription: "Transcription échouée.",
     });
   }
 });
 
-app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
