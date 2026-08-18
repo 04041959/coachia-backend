@@ -3,6 +3,8 @@ import cors from "cors";
 import multer from "multer";
 import fs from "fs";
 import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
+
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -12,7 +14,15 @@ app.use(express.json());
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
+ 
 });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+
 
 const conversations = {};
 
