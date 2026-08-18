@@ -104,6 +104,27 @@ app.get("/chatAlex", async (req, res) => {
       ];
     }
 
+const { data: storedMessages, error: messagesError } = await supabase
+  .from("messages")
+  .select("role, text, created_at")
+  .eq("conversation_id", conversationId)
+  .order("created_at", { ascending: true });
+
+if (messagesError) {
+  console.error("❌ Erreur lecture historique Supabase :", messagesError);
+} else {
+  console.log(
+    "🧠 Messages Supabase trouvés :",
+    storedMessages?.length || 0
+  );
+}
+
+
+
+
+
+
+    
     conversations[conversationId].push({
       role: "user",
       content: message,
