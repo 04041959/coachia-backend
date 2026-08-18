@@ -22,10 +22,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-
-
-const conversations = {};
-
 const ALEX_SYSTEM_PROMPT = `
 Tu es Alex, un coach conversationnel doué, chaleureux, calme et bienveillant.
 
@@ -95,15 +91,6 @@ app.get("/chatAlex", async (req, res) => {
       });
     }
 
-    if (!conversations[conversationId]) {
-      conversations[conversationId] = [
-        {
-          role: "system",
-          content: ALEX_SYSTEM_PROMPT,
-        },
-      ];
-    }
-
 const { data: storedMessages, error: messagesError } = await supabase
   .from("messages")
   .select("role, text, created_at")
@@ -112,38 +99,56 @@ const { data: storedMessages, error: messagesError } = await supabase
 
 if (messagesError) {
   console.error("❌ Erreur lecture historique Supabase :", messagesError);
-} else {
-  console.log(
-    "🧠 Messages Supabase trouvés :",
-    storedMessages?.length || 0
-  );
+  throw messagesError;
 }
 
+console.log(
+  "🧠 Messages Supabase trouvés :",
+  storedMessages?.length || 0
+);
 
+const historyMessages = [
+  {
+    role: "system",
+    content: ALEX_SYSTEM_PROMPT,
+  },
+  ...(storedMessages || [])
+    .filter(
+      (m) =>
+        m.text &&
+        (m.role === "user" || m.role === "assistant")
+    )
+    .map((m) => ({
+      role: m.role,
+      content: m.text,
+    })),
+];
 
+// Sécurité : ajoute le message courant seulement s'il n'est pas déjà
+// le dernier message utilisateur enregistré dans Supabase.
+const lastMessage = historyMessages[historyMessages.length - 1];
 
+if (
+  !lastMessage ||
+  lastMessage.role !== "user" ||
+  lastMessage.content.trim() !== message.trim()
+) {
+  historyMessages.push({
+    role: "user",
+    content: message,
+  });
+}
 
-
-    
-    conversations[conversationId].push({
-      role: "user",
-      content: message,
-    });
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: conversations[conversationId],
-      temperature: 0.7,
-      max_tokens: 220,
-    });
+const completion = await openai.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: historyMessages,
+  temperature: 0.7,
+  max_tokens: 220,
+});
 
     const reply = completion.choices[0].message.content.trim();
 
-    conversations[conversationId].push({
-      role: "assistant",
-      content: reply,
-    });
-
+    
     console.log("✅ Réponse Alex générée :", reply);
 
     res.json({ reply });
