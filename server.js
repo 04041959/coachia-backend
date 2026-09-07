@@ -202,6 +202,13 @@ const completion = await openai.chat.completions.create({
 
 // Génération voix Alex MP3
 app.get("/generateAlexVoiceMp3", async (req, res) => {
+
+console.log("🔊 generateAlexVoiceMp3", {
+  method: req.method,
+  range: req.headers.range,
+  userAgent: req.headers["user-agent"],
+});
+
   try {
     const text = req.query.text || "";
 
