@@ -1,13 +1,9 @@
-
-
 import express from "express";
 import cors from "cors";
 import multer from "multer";
 import fs from "fs";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-
-// 🆕 Permet de créer un identifiant unique pour chaque audio
 import { randomUUID } from "node:crypto";
 
 const app = express();
@@ -114,25 +110,11 @@ Mauvaise réponse :
 Réponds toujours dans la langue de l'utilisateur.
 `;
 
-// ======================================================
-// 🆕 CACHE TEMPORAIRE DES AUDIOS ALEX
-// ======================================================
-
-// Chaque audio généré est conservé temporairement ici.
-// Ainsi, plusieurs lectures de la même URL renverront
-// EXACTEMENT le même fichier MP3.
 const alexAudioCache = new Map();
 
-
-// Route test
 app.get("/", (req, res) => {
   res.send("Coachia backend is running ✅");
 });
-
-
-// ======================================================
-// CHAT ALEX
-// ======================================================
 
 app.get("/chatAlex", async (req, res) => {
   try {
@@ -156,71 +138,41 @@ app.get("/chatAlex", async (req, res) => {
       .order("created_at", { ascending: true });
 
     if (messagesError) {
-      console.error(
-        "❌ Erreur lecture historique Supabase :",
-        messagesError
-      );
+      console.error("❌ Erreur lecture historique Supabase :", messagesError);
       throw messagesError;
     }
 
-    console.log(
-      "🧠 Messages Supabase trouvés :",
-      storedMessages?.length || 0
-    );
+    console.log("🧠 Messages Supabase trouvés :", storedMessages?.length || 0);
 
     const historyMessages = [
-      {
-        role: "system",
-        content: ALEX_SYSTEM_PROMPT,
-      },
-
+      { role: "system", content: ALEX_SYSTEM_PROMPT },
       ...(storedMessages || [])
-        .filter(
-          (m) =>
-            m.text &&
-            (m.role === "user" || m.role === "assistant")
-        )
-        .map((m) => ({
-          role: m.role,
-          content: m.text,
-        })),
+        .filter((m) => m.text && (m.role === "user" || m.role === "assistant"))
+        .map((m) => ({ role: m.role, content: m.text })),
     ];
 
-    // Sécurité : ajoute le message courant seulement s'il n'est pas déjà
-    // le dernier message utilisateur enregistré dans Supabase.
-    const lastMessage =
-      historyMessages[historyMessages.length - 1];
+    const lastMessage = historyMessages[historyMessages.length - 1];
 
     if (
       !lastMessage ||
       lastMessage.role !== "user" ||
       lastMessage.content.trim() !== message.trim()
     ) {
-      historyMessages.push({
-        role: "user",
-        content: message,
-      });
+      historyMessages.push({ role: "user", content: message });
     }
 
-    const completion =
-      await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: historyMessages,
-        temperature: 0.7,
-        max_tokens: 220,
-      });
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: historyMessages,
+      temperature: 0.7,
+      max_tokens: 220,
+    });
 
-    const reply =
-      completion.choices[0].message.content.trim();
-
+    const reply = completion.choices[0].message.content.trim();
     console.log("✅ Réponse Alex générée :", reply);
-
     res.json({ reply });
-
   } catch (error) {
-
     console.error("❌ Erreur chatAlex :", error);
-
     res.status(500).json({
       reply:
         "Je suis désolé, j'ai eu un petit blocage. Peux-tu reformuler simplement ta question ?",
@@ -228,49 +180,25 @@ app.get("/chatAlex", async (req, res) => {
   }
 });
 
-
-// ======================================================
-// 🆕 PRÉPARATION AUDIO STABLE
-// ======================================================
-//
-// FlutterFlow appellera cette route UNE SEULE FOIS.
-//
-// Elle :
-// 1. reçoit le texte ;
-// 2. génère le MP3 une fois ;
-// 3. conserve le MP3 temporairement ;
-// 4. retourne une URL stable.
-//
-// ======================================================
-
 app.post("/prepareAlexVoice", async (req, res) => {
   try {
-
     const text = req.body.text || "";
 
     console.log("🎙️ Préparation voix Alex :", text);
 
     if (!text.trim()) {
-      return res.status(400).json({
-        error: "Texte vide",
-      });
+      return res.status(400).json({ error: "Texte vide" });
     }
 
-    // Génération TTS UNE SEULE FOIS
     const mp3 = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: "alloy",
       input: text,
     });
 
-    const buffer = Buffer.from(
-      await mp3.arrayBuffer()
-    );
-
-    // Identifiant unique pour cet audio
+    const buffer = Buffer.from(await mp3.arrayBuffer());
     const audioId = randomUUID();
 
-    // On conserve exactement ce MP3
     alexAudioCache.set(audioId, buffer);
 
     console.log(
@@ -280,84 +208,36 @@ app.post("/prepareAlexVoice", async (req, res) => {
       buffer.length
     );
 
-    // L'audio reste disponible 10 minutes.
-    // Ensuite il est supprimé automatiquement.
     setTimeout(() => {
-
       alexAudioCache.delete(audioId);
-
-      console.log(
-        "🗑️ Audio Alex supprimé du cache :",
-        audioId
-      );
-
+      console.log("🗑️ Audio Alex supprimé du cache :", audioId);
     }, 10 * 60 * 1000);
 
-    // URL stable qui permettra à FlutterFlow
-    // de récupérer exactement ce même MP3.
-   const audioUrl =
-  `https://coachia-backend-1.onrender.com/alexAudio/${audioId}.mp3`;
+    const audioUrl =
+      `https://coachia-backend-1.onrender.com/alexAudio/${audioId}.mp3`;
 
-    console.log(
-      "🔗 URL audio Alex :",
-      audioUrl
-    );
+    console.log("🔗 URL audio Alex :", audioUrl);
 
-    res.json({
-      audioUrl,
-      audioId,
-    });
-
+    res.json({ audioUrl, audioId });
   } catch (error) {
-
-    console.error(
-      "❌ Erreur préparation voix Alex :",
-      error
-    );
-
-    res.status(500).json({
-      error: "Erreur génération voix",
-    });
+    console.error("❌ Erreur préparation voix Alex :", error);
+    res.status(500).json({ error: "Erreur génération voix" });
   }
 });
 
-
-// ======================================================
-// 🆕 LECTURE DU MP3 STABLE
-// ======================================================
-//
-// Même si just_audio demande cette URL plusieurs fois,
-// il recevra toujours exactement le même MP3.
-//
-// ======================================================
-
 app.get("/alexAudio/:audioId.mp3", (req, res) => {
-
   const audioId = req.params.audioId;
+  const buffer = alexAudioCache.get(audioId);
 
-  const buffer =
-    alexAudioCache.get(audioId);
-
-  console.log(
-    "▶️ Lecture audio Alex :",
-    audioId,
-    {
-      method: req.method,
-      range: req.headers.range,
-      userAgent: req.headers["user-agent"],
-    }
-  );
+  console.log("▶️ Lecture audio Alex :", audioId, {
+    method: req.method,
+    range: req.headers.range,
+    userAgent: req.headers["user-agent"],
+  });
 
   if (!buffer) {
-
-    console.log(
-      "⚠️ Audio Alex introuvable :",
-      audioId
-    );
-
-    return res
-      .status(404)
-      .send("Audio introuvable ou expiré");
+    console.log("⚠️ Audio Alex introuvable :", audioId);
+    return res.status(404).send("Audio introuvable ou expiré");
   }
 
   res.set({
@@ -369,14 +249,7 @@ app.get("/alexAudio/:audioId.mp3", (req, res) => {
   res.send(buffer);
 });
 
-
-// ======================================================
-// ANCIENNE GÉNÉRATION VOIX ALEX MP3
-// CONSERVÉE TEMPORAIREMENT COMME FILET DE SÉCURITÉ
-// ======================================================
-
 app.get("/generateAlexVoiceMp3", async (req, res) => {
-
   console.log("🔊 generateAlexVoiceMp3", {
     method: req.method,
     range: req.headers.range,
@@ -384,35 +257,22 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
   });
 
   try {
-
     const text = req.query.text || "";
-
-    console.log(
-      "🔊 Texte voix reçu :",
-      text
-    );
+    console.log("🔊 Texte voix reçu :", text);
 
     if (!text.trim()) {
-      return res
-        .status(400)
-        .send("Texte vide");
+      return res.status(400).send("Texte vide");
     }
 
-    const mp3 =
-      await openai.audio.speech.create({
-        model: "gpt-4o-mini-tts",
-        voice: "alloy",
-        input: text,
-      });
+    const mp3 = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      input: text,
+    });
 
-    const buffer = Buffer.from(
-      await mp3.arrayBuffer()
-    );
+    const buffer = Buffer.from(await mp3.arrayBuffer());
 
-    console.log(
-      "✅ MP3 Alex généré. Taille :",
-      buffer.length
-    );
+    console.log("✅ MP3 Alex généré. Taille :", buffer.length);
 
     res.set({
       "Content-Type": "audio/mpeg",
@@ -420,162 +280,83 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
     });
 
     res.send(buffer);
-
   } catch (error) {
-
-    console.error(
-      "❌ Erreur génération MP3 :",
-      error
-    );
-
-    res
-      .status(500)
-      .send("Erreur génération voix");
+    console.error("❌ Erreur génération MP3 :", error);
+    res.status(500).send("Erreur génération voix");
   }
 });
-
-
-// ======================================================
-// TRANSCRIPTION AUDIO UTILISATEUR
-// ======================================================
 
 app.post(
   "/transcribeUserAudio",
   upload.single("audio"),
   async (req, res) => {
-
     let tempFilePath = null;
 
     try {
-
-      console.log(
-        "🎙️ Route transcribeUserAudio appelée"
-      );
-
-      console.log(
-        "📁 Fichier reçu :",
-        req.file
-      );
+      console.log("🎙️ Route transcribeUserAudio appelée");
+      console.log("📁 Fichier reçu :", req.file);
 
       if (!req.file) {
-
         return res.status(400).json({
-          transcription:
-            "Aucun fichier audio reçu.",
+          transcription: "Aucun fichier audio reçu.",
         });
       }
 
-      const originalName =
-        req.file.originalname || "";
+      const originalName = req.file.originalname || "";
 
       const extension =
-        originalName
-          .toLowerCase()
-          .endsWith(".wav")
+        originalName.toLowerCase().endsWith(".wav")
           ? ".wav"
-
-          : originalName
-            .toLowerCase()
-            .endsWith(".mp3")
+          : originalName.toLowerCase().endsWith(".mp3")
           ? ".mp3"
-
-          : originalName
-            .toLowerCase()
-            .endsWith(".webm")
+          : originalName.toLowerCase().endsWith(".webm")
           ? ".webm"
-
-          : originalName
-            .toLowerCase()
-            .endsWith(".ogg")
+          : originalName.toLowerCase().endsWith(".ogg")
           ? ".ogg"
-
-          : originalName
-            .toLowerCase()
-            .endsWith(".mp4")
+          : originalName.toLowerCase().endsWith(".mp4")
           ? ".mp4"
-
           : ".m4a";
 
-      tempFilePath =
-        req.file.path + extension;
+      tempFilePath = req.file.path + extension;
+      fs.renameSync(req.file.path, tempFilePath);
 
-      fs.renameSync(
-        req.file.path,
-        tempFilePath
-      );
+      console.log("🎧 Fichier renommé pour Whisper :", tempFilePath);
 
-      console.log(
-        "🎧 Fichier renommé pour Whisper :",
-        tempFilePath
-      );
-
-      const transcription =
-        await openai.audio.transcriptions.create({
-          file:
-            fs.createReadStream(
-              tempFilePath
-            ),
-          model: "whisper-1",
-        });
+      const transcription = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(tempFilePath),
+        model: "whisper-1",
+      });
 
       fs.unlinkSync(tempFilePath);
 
-      console.log(
-        "✅ Transcription réussie :",
-        transcription.text
-      );
+      console.log("✅ Transcription réussie :", transcription.text);
 
-      res.json({
-        transcription:
-          transcription.text,
-      });
-
+      res.json({ transcription: transcription.text });
     } catch (error) {
+      console.error("❌ Erreur transcription :", error);
 
-      console.error(
-        "❌ Erreur transcription :",
-        error
-      );
-
-      if (
-        tempFilePath &&
-        fs.existsSync(tempFilePath)
-      ) {
+      if (tempFilePath && fs.existsSync(tempFilePath)) {
         try {
           fs.unlinkSync(tempFilePath);
         } catch (e) {}
       }
 
-      if (
-        req.file &&
-        req.file.path &&
-        fs.existsSync(req.file.path)
-      ) {
+      if (req.file && req.file.path && fs.existsSync(req.file.path)) {
         try {
           fs.unlinkSync(req.file.path);
         } catch (e) {}
       }
 
       res.status(500).json({
-        transcription:
-          "Transcription échouée.",
+        transcription: "Transcription échouée.",
       });
     }
   }
 );
 
-
-// ======================================================
-// DÉMARRAGE SERVEUR
-// ======================================================
-
-const PORT =
-  process.env.PORT || 10000;
+const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-
-  console.log(
-    `🚀 Server running on port ${PORT}`
-  );
-
+  console.log(`🚀 Server running on port ${PORT}`);
 });
+
