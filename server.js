@@ -1,3 +1,5 @@
+
+
 import express from "express";
 import cors from "cors";
 import multer from "multer";
@@ -293,9 +295,8 @@ app.post("/prepareAlexVoice", async (req, res) => {
 
     // URL stable qui permettra à FlutterFlow
     // de récupérer exactement ce même MP3.
-    const audioUrl =
-      `${req.protocol}://${req.get("host")}` +
-      `/alexAudio/${audioId}.mp3`;
+   const audioUrl =
+  `https://coachia-backend-1.onrender.com/alexAudio/${audioId}.mp3`;
 
     console.log(
       "🔗 URL audio Alex :",
