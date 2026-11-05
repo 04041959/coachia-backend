@@ -21,6 +21,46 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+
+async function authenticateUser(req, res, next) {
+  const authorization = req.headers.authorization || "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "Authentification requise"
+    });
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token) {
+    return res.status(401).json({
+      error: "Jeton manquant"
+    });
+  }
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+
+    if (error || !data?.user) {
+      return res.status(401).json({
+        error: "Session invalide ou expirée"
+      });
+    }
+
+    req.authenticatedUser = data.user;
+    next();
+  } catch (error) {
+    console.error("Erreur authentification :", error.message);
+
+    return res.status(401).json({
+      error: "Authentification impossible"
+    });
+  }
+}
+
+
+
 const ALEX_SYSTEM_PROMPT = `
 Tu es Alex, un coach conversationnel doué, chaleureux, calme et bienveillant.
 
@@ -116,11 +156,38 @@ app.get("/", (req, res) => {
   res.send("Coachia backend is running ✅");
 });
 
-app.get("/chatAlex", async (req, res) => {
+app.get("/chatAlex", authenticateUser, async (req, res) => {
+  
   try {
     const message = req.query.message || "";
     const conversationId = req.query.conversationId || "default";
+    
+if (!conversationId || conversationId === "default") {
+  return res.status(400).json({
+    error: "Identifiant de conversation invalide"
+  });
+}
 
+const { data: conversation, error: conversationError } = await supabase
+  .from("conversations")
+  .select("user_id")
+  .eq("id", conversationId)
+  .maybeSingle();
+
+if (
+  conversationError ||
+  !conversation ||
+  conversation.user_id !== req.authenticatedUser.id
+) {
+  return res.status(403).json({
+    error: "Accès à cette conversation refusé"
+  });
+}
+
+
+
+
+    
     console.log("💬 Message reçu :", message);
     console.log("🧠 Conversation ID :", conversationId);
 
