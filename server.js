@@ -245,6 +245,16 @@ app.get("/chatAlex", async (req, res) => {
 
 app.post("/prepareAlexVoice", async (req, res) => {
   try {
+
+    
+    const user = await verifySupabaseUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentification requise ou session expirée."
+      });
+    }
+
     const text = req.body.text || "";
 
     console.log("🎙️ Préparation voix Alex :", text);
