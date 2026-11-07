@@ -359,10 +359,35 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
   }
 });
 
+
 app.post(
   "/transcribeUserAudio",
+  async (req, res, next) => {
+    try {
+      const user = await verifySupabaseUser(req);
+
+      if (!user) {
+        return res.status(401).json({
+          error: "Authentification requise ou session expirée."
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error("Erreur authentification transcription :", error);
+      return res.status(401).json({
+        error: "Authentification impossible."
+      });
+    }
+  },
   upload.single("audio"),
   async (req, res) => {
+
+
+
+
+
+    
     let tempFilePath = null;
 
     try {
