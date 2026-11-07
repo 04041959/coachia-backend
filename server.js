@@ -21,6 +21,34 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+
+async function verifySupabaseUser(req) {
+  const authorization = req.headers.authorization || "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data?.user) {
+    return null;
+  }
+
+  return data.user;
+}
+
+
+
+
+
+
 const ALEX_SYSTEM_PROMPT = `
 Tu es Alex, un coach conversationnel doué, chaleureux, calme et bienveillant.
 
