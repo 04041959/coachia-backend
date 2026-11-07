@@ -146,6 +146,17 @@ app.get("/", (req, res) => {
 
 app.get("/chatAlex", async (req, res) => {
   try {
+
+    
+    const user = await verifySupabaseUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentification requise ou session expirée."
+      });
+    }
+
+    
     const message = req.query.message || "";
     const conversationId = req.query.conversationId || "default";
 
@@ -159,6 +170,30 @@ app.get("/chatAlex", async (req, res) => {
       });
     }
 
+    
+    const { data: conversation, error: conversationError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (conversationError) {
+      console.error("Erreur vérification conversation :", conversationError);
+      return res.status(500).json({
+        error: "Impossible de vérifier la conversation."
+      });
+    }
+
+    if (!conversation) {
+      return res.status(403).json({
+        error: "Accès à cette conversation refusé."
+      });
+    }
+
+
+
+    
     const { data: storedMessages, error: messagesError } = await supabase
       .from("messages")
       .select("role, text, created_at")
