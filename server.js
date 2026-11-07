@@ -21,6 +21,34 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+
+async function verifySupabaseUser(req) {
+  const authorization = req.headers.authorization || "";
+
+  if (!authorization.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authorization.slice(7).trim();
+
+  if (!token) {
+    return null;
+  }
+
+  const { data, error } = await supabase.auth.getUser(token);
+
+  if (error || !data?.user) {
+    return null;
+  }
+
+  return data.user;
+}
+
+
+
+
+
+
 const ALEX_SYSTEM_PROMPT = `
 Tu es Alex, un coach conversationnel doué, chaleureux, calme et bienveillant.
 
@@ -118,6 +146,17 @@ app.get("/", (req, res) => {
 
 app.get("/chatAlex", async (req, res) => {
   try {
+
+    
+    const user = await verifySupabaseUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentification requise ou session expirée."
+      });
+    }
+
+    
     const message = req.query.message || "";
     const conversationId = req.query.conversationId || "default";
 
@@ -131,6 +170,30 @@ app.get("/chatAlex", async (req, res) => {
       });
     }
 
+    
+    const { data: conversation, error: conversationError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (conversationError) {
+      console.error("Erreur vérification conversation :", conversationError);
+      return res.status(500).json({
+        error: "Impossible de vérifier la conversation."
+      });
+    }
+
+    if (!conversation) {
+      return res.status(403).json({
+        error: "Accès à cette conversation refusé."
+      });
+    }
+
+
+
+    
     const { data: storedMessages, error: messagesError } = await supabase
       .from("messages")
       .select("role, text, created_at")
@@ -182,6 +245,16 @@ app.get("/chatAlex", async (req, res) => {
 
 app.post("/prepareAlexVoice", async (req, res) => {
   try {
+
+    
+    const user = await verifySupabaseUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        error: "Authentification requise ou session expirée."
+      });
+    }
+
     const text = req.body.text || "";
 
     console.log("🎙️ Préparation voix Alex :", text);
@@ -250,13 +323,23 @@ app.get("/alexAudio/:audioId.mp3", (req, res) => {
 });
 
 app.get("/generateAlexVoiceMp3", async (req, res) => {
+     try {
+   const user = await verifySupabaseUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "Authentification requise ou session expirée."
+    });
+  }
+
+
+  
   console.log("🔊 generateAlexVoiceMp3", {
     method: req.method,
     range: req.headers.range,
     userAgent: req.headers["user-agent"],
   });
 
-  try {
     const text = req.query.text || "";
     console.log("🔊 Texte voix reçu :", text);
 
@@ -286,10 +369,35 @@ app.get("/generateAlexVoiceMp3", async (req, res) => {
   }
 });
 
+
 app.post(
   "/transcribeUserAudio",
+  async (req, res, next) => {
+    try {
+      const user = await verifySupabaseUser(req);
+
+      if (!user) {
+        return res.status(401).json({
+          error: "Authentification requise ou session expirée."
+        });
+      }
+
+      next();
+    } catch (error) {
+      console.error("Erreur authentification transcription :", error);
+      return res.status(401).json({
+        error: "Authentification impossible."
+      });
+    }
+  },
   upload.single("audio"),
   async (req, res) => {
+
+
+
+
+
+    
     let tempFilePath = null;
 
     try {
