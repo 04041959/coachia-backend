@@ -323,13 +323,23 @@ app.get("/alexAudio/:audioId.mp3", (req, res) => {
 });
 
 app.get("/generateAlexVoiceMp3", async (req, res) => {
+     try {
+   const user = await verifySupabaseUser(req);
+
+  if (!user) {
+    return res.status(401).json({
+      error: "Authentification requise ou session expirée."
+    });
+  }
+
+
+  
   console.log("🔊 generateAlexVoiceMp3", {
     method: req.method,
     range: req.headers.range,
     userAgent: req.headers["user-agent"],
   });
 
-  try {
     const text = req.query.text || "";
     console.log("🔊 Texte voix reçu :", text);
 
