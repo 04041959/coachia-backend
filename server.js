@@ -325,6 +325,7 @@ app.post(
       const transcription = await openai.audio.transcriptions.create({
         file: fs.createReadStream(tempFilePath),
         model: "whisper-1",
+        language: "fr",
       });
 
       fs.unlinkSync(tempFilePath);
