@@ -214,7 +214,7 @@ app.post("/prepareAlexVoice", async (req, res) => {
     }, 10 * 60 * 1000);
 
     const audioUrl =
-      `https://coachia-backend-1.onrender.com/alexAudio/${audioId}.mp3`;
+  `https://coachia-backend-2.onrender.com/alexAudio/${audioId}.mp3`;
 
     console.log("🔗 URL audio Alex :", audioUrl);
 
